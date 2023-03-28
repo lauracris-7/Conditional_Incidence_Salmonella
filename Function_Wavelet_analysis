@@ -1,0 +1,61 @@
+# This script performs Wavelet analysis for  to check for periodicity in the data #
+
+wavelet_analysis<-function(State, Pars)
+{
+  # Cleaning of cases:
+  with(as.list(c(State, Pars)), {
+    
+     
+       filename_power<-Pars[1]
+       filename_power_average<-Pars[2]
+       
+         
+  Env_Pathogen_data0 <- ddply (State, ~Date, summarise, Cases=sum(Cases_computed)) # subset for all postcodes combined per day
+
+  # Wavelet spectrum plot
+  Env_Pathogen_data0$date<-Env_Pathogen_data0$Date
+  salmonella_data_national <-Env_Pathogen_data0[order(as.Date(Env_Pathogen_data0$Date)),]  # Sort from least recent to most recent
+  dt0<-1
+  
+  my.wt = analyze.wavelet(salmonella_data_national, "Cases",
+                         loess.span=0.75,
+                         dt=dt0, dj=1/20,
+                         lowerPeriod=2.*dt0,
+                         upperPeriod=floor(nrow(salmonella_data_national)/3)*dt0,
+                         make.pval=T, n.sim=100)
+  
+  
+  wt.image(my.wt, color.key = "quantile", n.levels = 250,legend.params = list(lab = "wavelet power levels", mar = 4.7),show.date = T,
+          color.palette = "rainbow(n.levels, start=0, end=.6)",plot.contour = F, siglvl = 0.05, col.contour = "black", plot.ridge = T, lvl = 0, col.ridge = "black",date.format ="%Y-%m-%d",periodlab = "periods (days)",useRaster=T)
+  
+  # Save plot
+  tiff(filename =  filename_power,width = 17.35, height =  17.35, units = "cm", pointsize = 9, res = 600,compression = "lzw",antialias="default")
+  
+  wt.image(my.wt, color.key = "quantile", n.levels = 250,legend.params = list(lab = "wavelet power levels", mar = 4.7),show.date = T,color.palette = "rainbow(n.levels, start=0, end=.6)",plot.contour = F, siglvl = 0.05, col.contour = "black", plot.ridge = T, lvl = 0, col.ridge = "black",periodlab = "periods (minutes)",useRaster=F)
+  
+  dev.off()
+  
+  
+  # Power curve for ease of interpretation of Wavelet Gianni changed name as said detrend
+  
+  reconstruct(my.wt, plot.waves = F, lwd = c(1,2), legend.coords = "bottomleft")
+  
+  wt.avg(my.wt, siglvl=0.05, sigcol="red")
+  wt.phase.image(my.wt, "Cases")
+  
+  # Save plot 
+  tiff(filename =  filename_power_average,width = 17.35, height =  17.35, units = "cm", pointsize = 9, res = 600,compression = "lzw",antialias="default")
+  
+  wt.avg(my.wt,
+        show.siglvl = T, sigpch = 20,
+        label.avg.axis = T, averagelab = NULL,
+        label.period.axis = T, periodlab = NULL,
+        show.legend = T, legend.coords = "topright",
+        main = NULL, lwd = 0.5,
+        verbose = F)
+  
+  dev.off()
+  
+  return(salmonella_data_national[,c(1,2)])
+})
+}
