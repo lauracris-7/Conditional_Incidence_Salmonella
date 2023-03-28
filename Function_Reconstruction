@@ -1,0 +1,74 @@
+Reconstruction_time_series<-function(Conditional_prevalence_unif_list, Data_frame_2,Pars)
+{
+  
+  with(as.list(c(Conditional_prevalence_unif_list, Data_frame_2,Pars)), {
+    
+   
+    Conditional_prevalence_unif<-Conditional_prevalence_unif_info[[1]]
+    breaks_x<-Conditional_prevalence_unif_info[[4]]
+    breaks_y<-Conditional_prevalence_unif_info[[3]]
+    breaks_z<-Conditional_prevalence_unif_info[[2]]
+    Env_laboratory_data<-Data_frame_2
+    variable_x<-Pars[1]
+    variable_y<-Pars[2]
+    variable_z<-Pars[3]
+    info<-Pars[4]  
+    
+    # Third variable    
+    dt_z = data.table(breaks_z, val = breaks_z)
+    dt_z <- na.omit (dt_z)
+    setattr(dt_z, "sorted", "breaks_z")
+    dt_z2 <- dt_z[J(Env_laboratory_data[[variable_z]]), roll = "nearest"] 
+    variable_df_6_2 <- as.data.frame(Env_laboratory_data[,c("PostCode","Date", "residents")])
+    variable_df_6_2$day_break<- dt_z2$val
+    
+    
+    # Second variable
+    dt_y = data.table(breaks_y, val = breaks_y)
+    dt_y <- na.omit (dt_y)
+    setattr(dt_y, "sorted", "breaks_y")
+    dt_y2 <- dt_y[J(Env_laboratory_data[[variable_y]]), roll = "nearest"]
+    
+    
+    variable_df_6_2$hum_break<- dt_y2$val
+    
+    
+    
+    # First variable (Maximum air temperature)
+    dt_temp = data.table(breaks_x, val = breaks_x)
+    dt_temp <- na.omit (dt_temp)
+    setattr(dt_temp, "sorted", "breaks_x")
+    dt_temp2  <- dt_temp[J(Env_laboratory_data[[variable_x]]), roll = "nearest"]
+    
+    variable_df_6_2$temp_break<- dt_temp2$val
+    
+    colnames(variable_df_6_2) <- c("PostCode","Date", "residents", variable_z, variable_y, variable_x)
+    
+    dt_df8 <- data.table(variable_df_6_2)
+    dt_var <- data.table(Conditional_prevalence_unif)
+    variable_df_dis3 <- dt_df8[dt_var, on= c(variable_z,variable_y,variable_x), allow.cartesian=TRUE] # repeated rows since same conditions apply to more than one PC. Gianni this shoul be a merge
+    #dis<-merge(dt_df8,dt_var,by=c("Global_radiation","Mean_Precipitation","Maximum_air_temperature"))
+
+    variable_df_dis3 <- na.omit(variable_df_dis3) %>% distinct() 
+    variable_df_dis3 <-variable_df_dis3[order(as.Date(variable_df_dis3$Date)),]
+    
+    colnames(variable_df_dis3)[8] ="residents_total" # rename this variable at some point
+    
+    # Calculation of all the potential prevalence based on the weather conditions of the area. The counts used as numerator correspond to the simulation of cases per weather condition.
+    variable_df_dis3$prevalence <-variable_df_dis3$counts/variable_df_dis3$residents_total 
+    
+    
+    # if (length(na.omit(variable_df_dis3[,1])!=0)){
+    
+    comp_cases <-variable_df_dis3$prevalence*variable_df_dis3$residents # estimation of the "real" prevalence based on the possible cases due to weather and the residents number in the catchment area
+    time_series <-data.frame(variable_df_dis3$Date, comp_cases, variable_df_dis3$prevalence, variable_df_dis3$PostCode)
+    colnames(time_series) <-c("Date","Cases","Lambda","Lab")
+    
+    #}
+    
+    write.table(time_series, paste(variable_x,"_",variable_y,"_",variable_z,"_",width_char,info,sep=""), col.names= NA, row.names= TRUE, sep=",",eol= "\n") #  Saved on 17/11 after switching residents_total and residents from the denominator respecting the above attempt.  
+    return(time_series)
+    
+
+})
+}
