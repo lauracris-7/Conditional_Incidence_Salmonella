@@ -1,0 +1,157 @@
+
+Conditional_prevalence_Uniform<-function(Data_frame_1, Data_frame_2,Pars)
+{
+  
+  with(as.list(c(Data_frame_1, Data_frame_2,Pars)), {
+    
+# Reshape the residents information to make a data frame with the postcode, year and number of residents
+
+
+# Pars is the list of 3 variables of interest chese from below
+
+# Potential Variables to use:
+#"Global_radiation",
+#"Maximum_air_temperature",
+#"Mean_air_temperature",
+#"Minimum_air_temperature",
+#"Mean_cloud_cover",
+#"Mean_dewpoint_temperature",
+#"Mean_soil_temperature_1m",
+#"Mean_soil_temperature_10_cm",
+#"Mean_soil_temperature_20_cm",
+#"Mean_soil_temperature_30_cm",
+#"Mean_soil_temperature_50_cm",
+#"Mean_surface_air_pressure",
+#"Mean_sea-level_air_pressure" # in (hPa), altitude interpolation adjusted
+#"Mean_visibility",
+#"Mean_wind_speed",
+#"Mean_Precipitation",
+#"Relative_humidity",
+#"Snow_depth_9_h",
+#"Sunshine_duration"
+#"daylength"
+#"Temperature_amplitude"
+#"Temperature_indoor"
+#"Relative_humidity_indoor"
+
+
+
+variable_x<-Pars[1] 
+variable_y<-Pars[2]
+variable_z<-Pars[3]
+info<-Pars[4]
+delta_x<-as.numeric(Pars[5]) #1
+round_digit_x<-as.numeric(Pars[6]) #0
+delta_y<-as.numeric(Pars[7]) #.5
+round_digit_y<-as.numeric(Pars[8]) #2
+delta_z<-as.numeric(Pars[9]) #1
+round_digit_z<-as.numeric(Pars[10]) #0
+
+
+
+
+# Select the variables of study:
+Env_Laboratory_data_df <- Data_frame_1[,c("PostCode","Date", variable_x,variable_y,variable_z,
+                                               "residents")]
+Env_Laboratory_data <- Env_Laboratory_data_df[complete.cases(Env_Laboratory_data_df),] # in case there are days without a weather value recorded
+
+
+Env_Pathogen_data_df <- Data_frame_2[,c("PostCode","Date","Cases_computed", variable_x,variable_y,variable_z,
+                                                 "residents")]
+Env_Pathogen_data <- Env_Pathogen_data_df[complete.cases(Env_Pathogen_data_df),] 
+
+
+
+
+################### Divide the domain of weather variable in bins of delta size for the uniform distribution. 
+
+  breaks_x <-round(seq(min(na.omit(Env_Laboratory_data[[variable_x]])), 
+                       max(na.omit(Env_Laboratory_data[[variable_x]])) , by=delta_x), round_digit_x)
+  
+  breaks_y <-round(seq(min(na.omit(Env_Laboratory_data[[variable_y]])), 
+                       max(na.omit(Env_Laboratory_data[[variable_y]])) , by=delta_y), round_digit_y)
+  
+  breaks_z <-round(seq(min(na.omit(Env_Laboratory_data[[variable_z]])), 
+                       max(na.omit(Env_Laboratory_data[[variable_z]])) , by=delta_z), round_digit_z)
+  
+  
+
+
+  #################### Create a data frame to fill with
+Conditional_prevalence_unif <-data.frame(character(), character(), character(), numeric(),  numeric())
+colnames(Conditional_prevalence_unif) <-c(variable_z, variable_y, variable_x,"counts","residents_tot") # changed the order to match the loop. needed?
+
+
+
+j_z_min <-1 
+j_z_max <-length(breaks_z)
+
+for (j_z in c(j_z_min:j_z_max)){ 
+  
+# below I round the values of the variables of interest in Env_Pathogen_data to the closest break value  the nearest break
+  
+  wt <- match.closest (Env_Pathogen_data[[ variable_z]], breaks_z)                         # round to the nearest bin and get the index
+  ww <-which(wt==j_z)                                                                      # number of events when the variable coincides with the category
+  Env_Pathogen_data_z <-Env_Pathogen_data[ww, ]                                            # subset of all cases where daylength is between the category above
+  
+  #same for lab dataset
+  wt_t <- match.closest (Env_Laboratory_data[[ variable_z]], breaks_z)
+  ww_t <-which(wt_t==j_z)
+  Env_Laboratory_data_z <-Env_Laboratory_data[ww_t, ]
+  
+                            
+      j_y_min <- 1
+      j_y_max <-length(breaks_y)
+      
+      for (j_y in c(j_y_min:j_y_max)){ # from the bins resulting above, find another variable stratification
+        
+        wt_y <- match.closest (Env_Pathogen_data_z[[ variable_y]],   breaks_y)
+        ww_y <-which(wt_y==j_y)
+        Env_Pathogen_data_y <-Env_Pathogen_data_z[ww_y, ]
+        
+        
+        wt_y_t <- match.closest (Env_Laboratory_data_z[[ variable_y]],   breaks_y)
+        ww_y_t <-which(wt_y_t==j_y)
+        Env_Laboratory_data_y <-Env_Laboratory_data_z[ww_y_t, ] 
+        
+        
+          j_x_min <-1
+          j_x_max <- length(  breaks_x)
+          
+          for (j_x in c(j_x_min:j_x_max)){
+            
+            wt_x <- match.closest (Env_Pathogen_data_y[[variable_x]],   breaks_x)
+            ww_x <-which(wt_x==j_x)
+            Pathogen_stratified <-Env_Pathogen_data_y[ww_x,] #where there are cases for specific values of the 3 weather variables. residents is the number of people exposed to these situations during the entire duration of the dataset. It is the number of times the people is exposed to this caracteristics, only when a case is found. It can count a same catchment area twice. Residents total is the same irrespectively of the presence of a case
+            
+            
+            wt_x_t <- match.closest (Env_Laboratory_data_y[[variable_x]],   breaks_x)
+            ww_x_t <-which(wt_x_t==j_x)
+            Laboratory_stratified <-Env_Laboratory_data_y[ww_x_t, ] 
+            
+            Total_cases <-sum((as.numeric(na.omit(Pathogen_stratified$Cases))))
+            residents_tot <-sum((as.numeric(na.omit(Laboratory_stratified$residents)))) #number of people exposed to these weather conditions. Will be used to calculate the incidence
+            
+            data_df <-data.frame (
+              breaks_z[j_z],
+              breaks_y[j_y],
+              breaks_x[j_x],
+              Total_cases,
+              residents_tot
+            )
+            
+            colnames(data_df) <-c(variable_z, variable_y, variable_x,"counts","residents_tot") 
+            Conditional_prevalence_unif <-rbind(Conditional_prevalence_unif, data_df) 
+            }
+       
+      }
+    
+  print(c(j_x, j_y,j_z,variable_x,variable_y,variable_z)) 
+  
+  
+}
+write.table(Conditional_prevalence_unif, paste("Conditional_prevalence",variable_z,"_",variable_y,"_",variable_x,"_",width_char,info,sep=""), col.names = NA, row.names = TRUE , sep = ",",eol = "\n")
+return(list(Conditional_prevalence_unif,breaks_z,breaks_y,breaks_x))
+
+  })
+  }
