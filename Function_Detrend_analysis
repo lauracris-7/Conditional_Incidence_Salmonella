@@ -1,0 +1,47 @@
+# Remove temporal trend from the time-series of salmonellosis
+
+Detrend_analysis<-function(Data_frame_1, Data_frame_2,Pars)
+{
+  
+  with(as.list(c(Data_frame_1, Data_frame_2,Pars)), {
+  
+    
+    salmonella_data_national<-Data_frame_1
+    salmonella_enviroment_data<-Data_frame_2
+    file_name<-Pars
+
+sal2 <- salmonella_data_national[salmonella_data_national[,1]>="2012-01-01",] # get the dimension of the last 5 years of data as a reference
+mean_cases_2012_16 <- mean(sal2$Cases)     # mean daily cases equals 15.40328
+
+
+national_detrended <-detrend.series(y=salmonella_data_national$Cases, y.name = "", make.plot = TRUE,
+                                    method = c("Spline"),return.info=TRUE)
+
+salmonella_df <-data.frame(salmonella_data_national$Date, salmonella_data_national$Cases, national_detrended$series, national_detrended$curves)
+colnames(salmonella_df)<-c("Date","cases","detrend","curve") 
+
+
+salmonella_cases_detrend <-merge(salmonella_enviroment_data , salmonella_df, by="Date")                 
+# I am applying the national curve data to a smaller PC area, which is similar to calculating the curve of the specific PC.
+salmonella_cases_detrend$Cases_detrend<-salmonella_cases_detrend$Cases/salmonella_cases_detrend$curve 
+salmonella_cases_detrend$Cases_detrend_adjusted <- salmonella_cases_detrend$Cases_detrend* mean_cases_2012_16
+
+# Plot detrend:
+plot_detrend <-ggplot(salmonella_cases_detrend, aes(x=Date, y=detrend)) + 
+                geom_line(color="darkred",stat = "identity") +
+                xlab("Date") + ylab("Number of Occurences") +
+                theme(axis.title.y =element_text(face="bold", colour="#990000", size=13),
+                      axis.title.x =element_text(face="bold", colour="#990000", size=13)) + 
+                ggtitle ("Detrended cases 2000-2016")
+
+tiff(filename = file_name, width = 17.35, height =  17.35, units = "cm", pointsize = 9, res = 600, compression = "lzw", antialias="default")
+
+print(plot_detrend)
+
+dev.off()
+
+return(salmonella_cases_detrend)
+
+
+})
+}
