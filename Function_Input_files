@@ -1,0 +1,137 @@
+##### Read Simulation of Salmonella cases from the England and Wales. ####
+#  Reminder that these cases are only for the PC with residents information provided by PHE (missing 117 PC, and about 1/3 of the salmonella cases)
+Env_Pathogen_data_all <-read_csv(paste("../Code/Simulated_Salmonella_environment_",width_char,".csv",sep=""))
+Env_Pathogen_data_all <- as.data.frame(Env_Pathogen_data_all)
+
+Env_Pathogen_data_all <-Env_Pathogen_data_all[,-1]
+colnames(Env_Pathogen_data_all) <-c("PostCode","Date","Cases",
+                                     "Global_radiation",
+                                     "Maximum_air_temperature",
+                                     "Mean_air_temperature",
+                                     "Minimum_air_temperature",
+                                     "Mean_cloud_cover",
+                                     "Mean_dewpoint_temperature",
+                                     "Mean_soil_temperature_1m",
+                                     "Mean_soil_temperature_10_cm",
+                                     "Mean_soil_temperature_20_cm",
+                                     "Mean_soil_temperature_30_cm",
+                                     "Mean_soil_temperature_50_cm",
+                                     "Mean_surface_air_pressure",
+                                     "Mean_visibility",
+                                     "Mean_wind_speed",
+                                     "Cumul_Precipitation",
+                                     "Mean_Precipitation",
+                                     "Relative_humidity",
+                                     "Snow_depth_9_h",
+                                     "Sunshine_duration",
+                                     "daylength",
+                                     "residents")
+
+# Calculation of other weather variables:
+Env_Pathogen_data_all$Temperature_amplitude <- Env_Pathogen_data_all$Maximum_air_temperature - Env_Pathogen_data_all$Minimum_air_temperature
+
+
+# Outdoor absolute humidity in kPa based on the mean oudoor temperature using the formula from [70] Mander P. 2012 (used in the paper of Verheyen 2022)
+Env_Pathogen_data_all$Absolute_humidity <- 6.112*((exp((17.625*Env_Pathogen_data_all$Mean_air_temperature)/(243.04+Env_Pathogen_data_all$Mean_air_temperature))*
+                                                      Env_Pathogen_data_all$Relative_humidity*2.1674)/(273.16+Env_Pathogen_data_all$Mean_air_temperature))
+
+Env_Pathogen_data_all$Temperature_indoor <- ifelse (Env_Pathogen_data_all$Mean_air_temperature < 21, 21, Env_Pathogen_data_all$Mean_air_temperature)
+
+# Saturation vapour density (VDsat) in (gm^-3) from Nave R. 2016 (used in the paper of Verheyen 2022)
+Env_Pathogen_data_all$Vapour_density_sat <- 5.02+0.32*Env_Pathogen_data_all$Temperature_indoor +
+  8.18*1E-3*Env_Pathogen_data_all$Temperature_indoor^2 +
+  3.12*1E-4*Env_Pathogen_data_all$Temperature_indoor^3
+
+Env_Pathogen_data_all$Relative_humidity_indoor <- Env_Pathogen_data_all$Absolute_humidity/Env_Pathogen_data_all$Vapour_density_sat
+
+
+# Select the variables of interest:
+Env_Pathogen_data_all$Date<-as.Date(Env_Pathogen_data_all$Date,format = "%d/%m/%Y")
+Env_Pathogen_data_all <- distinct(Env_Pathogen_data_all)                         # Remove possible duplicates
+Env_Pathogen_data <-(subset(Env_Pathogen_data_all, year(Env_Pathogen_data_all$Date)>=year_first & year(Env_Pathogen_data_all$Date)<=year_last))
+
+
+
+# Read the weather variables for every PC, averaged for the estimated delay in the past
+
+Env_laboratory_data_all <-read_csv(paste("../Code/Simulated_Laboratory_",width_char,".csv",sep=""))
+Env_laboratory_data_all <- as.data.frame (Env_laboratory_data_all)
+Env_laboratory_data_all <-Env_laboratory_data_all[,-1]
+colnames(Env_laboratory_data_all) <-c("PostCode","Date",
+                                   "Global_radiation",
+                                   "Maximum_air_temperature",
+                                   "Mean_air_temperature",
+                                   "Minimum_air_temperature",
+                                   "Mean_cloud_cover",
+                                   "Mean_dewpoint_temperature",
+                                   "Mean_soil_temperature_1m",
+                                   "Mean_soil_temperature_10_cm",
+                                   "Mean_soil_temperature_20_cm",
+                                   "Mean_soil_temperature_30_cm",
+                                   "Mean_soil_temperature_50_cm",
+                                   "Mean_surface_air_pressure",
+                                   "Mean_visibility",
+                                   "Mean_wind_speed",
+                                   "Cumul_Precipitation",
+                                   "Mean_Precipitation",
+                                   "Relative_humidity",
+                                   "Snow_depth_9_h",
+                                   "Sunshine_duration",
+                                   "daylength",
+                                   "residents")
+
+
+# Calculation of other weather variables:
+Env_laboratory_data_all$Temperature_amplitude <- Env_laboratory_data_all$Maximum_air_temperature - Env_laboratory_data_all$Minimum_air_temperature
+
+# Outdoor absolute humidity in kPa based on the mean oudoor temperature using the formula from Mander P. 2012 (used in the paper of Verheyen 2022)
+Env_laboratory_data_all$Absolute_humidity <- 6.112*((exp((17.625*Env_laboratory_data_all$Mean_air_temperature)/(243.04+Env_laboratory_data_all$Mean_air_temperature))*
+                                                    Env_laboratory_data_all$Relative_humidity*2.1674)/(273.16+Env_laboratory_data_all$Mean_air_temperature))
+
+Env_laboratory_data_all$Temperature_indoor <- ifelse (Env_laboratory_data_all$Mean_air_temperature < 21, 21, Env_laboratory_data_all$Mean_air_temperature)
+
+# Saturation vapour density (VDsat) in (gm^-3) from Nave R. 2016 (used in the paper of Verheyen 2022)
+Env_laboratory_data_all$Vapour_density_sat <- 5.02+0.32*Env_laboratory_data_all$Temperature_indoor +
+  8.18*1E-3*Env_laboratory_data_all$Temperature_indoor^2 +
+  3.12*1E-4*Env_laboratory_data_all$Temperature_indoor^3
+
+Env_laboratory_data_all$Relative_humidity_indoor <- Env_laboratory_data_all$Absolute_humidity/Env_laboratory_data_all$Vapour_density_sat
+
+
+
+# Remove instances at the same date and location with more than one register. There were duplicates but the number of cases are correct, so it's safe to remove duplicates
+Env_laboratory_data_all <- distinct(Env_laboratory_data_all)
+
+
+# Select the subset the year of interest
+
+Env_laboratory_data<-subset(Env_laboratory_data_all, year(as.Date(Env_laboratory_data_all$Date))>=year_first & year(as.Date(Env_laboratory_data_all$Date))<=year_last)
+
+
+# Read the Salmonella cases for RIVM
+salmonella_data_all_RIVM <- read.csv(paste0("C:/Users/LG00757/OneDrive - University of Surrey/OHEJP/STM/Collaboration_Linda/data/Outputs/Simulated_Salmonella_environment_",width_char,".csv"))
+salmonella_data_all_RIVM <- salmonella_data_all_RIVM [,-1]
+
+salmonella_data_RIVM <- subset (salmonella_data_all_RIVM, year(salmonella_data_all_RIVM$Date) %in% c(2015,2017:2019))  
+salmonella_data_RIVM <- salmonella_data_RIVM[complete.cases(salmonella_data_RIVM[,3]),]
+
+colnames(salmonella_data_RIVM) <-c("PostCode","Date", "Cases",
+                                           "Maximum_air_temperature","Mean_Precipitation",
+                                           "Global_radiation", "residents" )
+
+
+
+# Read the weather averaged for 7 days for the Netherlands
+#Env_laboratory_data_all_RIVM <- read.csv(paste0("C:/Users/LG00757/OneDrive - University of Surrey/OHEJP/STM/Collaboration_Linda/data/Outputs/Simulated_Laboratory_",width_char,"_tmax,precip,radiation.csv"))
+Env_laboratory_data_all_RIVM <- read.csv(paste0("C:/Users/LG00757/OneDrive - University of Surrey/OHEJP/STM/Collaboration_Linda/data/Outputs/Simulated_Laboratory_",width_char,"_tmax,rh,radiation.csv"))
+Env_laboratory_data_all_RIVM <- Env_laboratory_data_all_RIVM[,-1]
+Env_laboratory_data_all_RIVM$Date <- as.Date(Env_laboratory_data_all_RIVM$Date)
+
+colnames(Env_laboratory_data_all_RIVM) <-c("PostCode","Date",
+                                           "Maximum_air_temperature","Relative_humidity",
+                                           "Global_radiation", "residents" )
+
+# Select years of interest: 2015, 2017:2019
+
+Env_laboratory_data_RIVM <- subset (Env_laboratory_data_all_RIVM, year(Env_laboratory_data_all_RIVM$Date) %in% c(2015,2017:2019))  
+Env_laboratory_data_RIVM <- Env_laboratory_data_RIVM[complete.cases(Env_laboratory_data_RIVM[,2]),]
