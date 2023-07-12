@@ -1,0 +1,39 @@
+# Remove temporal trend from the time-series of salmonellosis
+
+Detrend_analysis_RIVM<-function(Data_frame_1, Data_frame_2,Data_frame_3,Pars)
+{
+  
+  with(as.list(c(Data_frame_1, Data_frame_2,Data_frame_3,Pars)), { 
+  
+    
+    salmonella_data_national<-Data_frame_1
+    salmonella_enviroment_data<-Data_frame_2
+    salmonella_data_RIVM<-Data_frame_3 
+    
+    file_name<-Pars
+
+    # get the average number of cases for the last 5 years of study, excluding 2016 for its unusual high number of cases
+    sal2 <- salmonella_data_RIVM[year(salmonella_data_RIVM$Date) %in% c(2015,2017:2019),]
+    sal2$Cases[is.na(sal2$Cases)] <- 0
+    salmonella_data_RIVM_sum <- ddply (sal2, ~Date, summarise, Cases_sum=sum(Cases)) 
+    #mean_cases_RIVM <-mean(salmonella_data_RIVM_sum$Cases_sum) # 2.405965 
+    mean_cases_RIVM <- 2.405965*59642000/17243913# add on to re-scale size of the countries
+
+national_detrended <-detrend.series(y=salmonella_data_national$Cases, y.name = "", make.plot = TRUE,
+                                    method = c("Spline"),return.info=TRUE)
+
+salmonella_df <-data.frame(salmonella_data_national$Date, salmonella_data_national$Cases, national_detrended$series, national_detrended$curves)
+colnames(salmonella_df)<-c("Date","cases","detrend","curve")  # data from the UK
+
+
+salmonella_cases_detrend <-merge(salmonella_enviroment_data , salmonella_df, by="Date")                 
+
+# We concluded that applying the national curve data to a smaller PC area is similar to calculating the curve of the specific PC.
+salmonella_cases_detrend$Cases_detrend<-salmonella_cases_detrend$Cases/salmonella_cases_detrend$curve    
+salmonella_cases_detrend$Cases_detrend_adjustedNL <- salmonella_cases_detrend$Cases_detrend*mean_cases_RIVM  
+
+
+return(salmonella_cases_detrend) # Output
+
+})
+}
