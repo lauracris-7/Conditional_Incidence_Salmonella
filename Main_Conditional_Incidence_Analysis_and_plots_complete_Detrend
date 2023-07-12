@@ -31,9 +31,9 @@ year_last<<-2016
 # Selection of the variables of interest. 
 #Change HERE depending on the variable object of study, by copy-pasting from the list below
 
-variable_x <-"Maximum_air_temperature" 
+variable_x <-"Mean_air_temperature" 
 variable_y <-"Relative_humidity"
-variable_z <-"Global_radiation"
+variable_z <-"daylength"
 
 # Potential Variables to use:
 #"Global_radiation",
@@ -85,7 +85,7 @@ salmonella_data_national <-wavelet_analysis(salmonella_cases_detrend,c("Power_Sp
 ###### 1. Calculate Conditional Incidence (Uniform) ######
 ## Analysis was done following a uniform division of the range of the environmental variables, independently of the number of observations
 
-source("Function_Conditional_Prevalence_Uniform.R", chdir=TRUE)
+source("Function_Conditional_Incidence_Uniform.R", chdir=TRUE)
 
 #### Automation for creating bins to categorize the weather factors, assigning breaks and delta values depending on the dispersion of values ####
 
@@ -120,35 +120,36 @@ if (variable_y=="Relative_humidity" | variable_y=="Mean_surface_air_pressure"){
 }
 
 
-Pars_cond_prev <- c(variable_x,variable_y,variable_z,"_Uniform_Detrend.csv",delta_x, round_x, delta_y, round_y, delta_z, round_z) #tmax, precip, radiation
-Conditional_prevalence_unif_info<-Conditional_prevalence_Uniform(Env_laboratory_data, salmonella_cases_detrend,Pars_cond_prev)
+Pars_cond_inc <- c(variable_x,variable_y,variable_z,"_Uniform_Detrend.csv", delta_x, round_x, delta_y, round_y, delta_z, round_z)
+Conditional_incidence_unif_info <-Conditional_prevalence_Uniform(Env_laboratory_data, salmonella_cases_detrend, Pars_cond_inc)
 
 
 ###### 2. Reconstruction with the detrended cases ######
 
 source("Function_Reconstruction.R")
-Pars_reconstruction <- c(variable_x,variable_y,variable_z,"_reconstructed_detrend_2000-2016.csv")
-Reconstruction_time_series<-Reconstruction_time_series(Conditional_prevalence_unif_info,Env_laboratory_data,Pars_reconstruction)
+Pars_reconstruction <- c(variable_x, variable_y, variable_z,"_reconstructed_detrend_2000-2016.csv")
+Reconstruction_time_series <-Reconstruction_time_series(Conditional_incidence_unif_info, Env_laboratory_data, Pars_reconstruction)
 
     ### Plot Reconstruction ###
 source("Function_Plot_Reconstruction.R")
-Pars_Plot_Reconstruction <- c(paste(variable_x,"_",variable_y,"_",variable_z,"_","time_series.tiff",sep=""),paste(variable_x,"_",variable_y,"_",variable_z,"_","yearly_average.tiff",sep=""),"Salmonellosis cases (detrended)") 
-Plot_Reconstruction_time_series(Reconstruction_time_series,salmonella_data_national,Pars_Plot_Reconstruction)
+Pars_Plot_Reconstruction <- c(paste(variable_x,"_",variable_y,"_",variable_z,"_","time_series.tiff",sep=""), paste(variable_x,"_",variable_y,"_",variable_z,"_","yearly_average.tiff",sep=""),"Salmonellosis cases (detrended)") 
+Plot_Reconstruction_time_series(Reconstruction_time_series, salmonella_data_national, Pars_Plot_Reconstruction)
 
 
 ###### 3. Calculate Conditional Incidence (Quantile) ###### 
 
-source("Function_Conditional_Prevalence_Quantile.R", chdir=TRUE)
-#Conditional_prevalence_Uniform
+source("Function_Conditional_Incidence_Quantile.R", chdir=TRUE)
 
-Pars_cond_prev <- c(variable_x,variable_y,variable_z,"_Uniform_Detrend.csv",1,0,0.5,2,1,0)
-Conditional_prevalence_unif_info<-Conditional_prevalence_Quantile(Env_laboratory_data, salmonella_cases_detrend,Pars_cond_prev)
+Pars_cond_inc_quant <- c(variable_x,variable_y,variable_z,"_Quantile.csv",1,0,0.5,2,1,0)
+Conditional_incidence_quant_info <-Conditional_prevalence_Quantile(Env_laboratory_data, salmonella_cases_detrend, Pars_cond_inc_quant)
 
 
     ### Plot Conditional Incidence Quantile ### 
-#source("Function_Plot_Reconstruction.R")
-#Pars_Plot_Reconstruction <- c(paste(variable_x,"_",variable_y,"_",variable_z,"_","time_series.tiff",sep=""),paste(variable_x,"_",variable_y,"_",variable_z,"_","yearly_average.tiff",sep=""),"Salmonellosis cases (detrended)")
-#Plot_Reconstruction_time_series(Reconstruction_time_series,salmonella_data_RIVM,Pars_Plot_Reconstruction)
+    # Plot for 1, 2 or 3 weather factors
+
+source("Function_Plot_CI_Quantiles.R")
+Pars_Plot_CI_Quant <- c(paste(variable_x,"_",variable_y,"_",variable_z,"_","time_series.tiff",sep=""),paste(variable_x,"_",variable_y,"_",variable_z,"_","yearly_average.tiff",sep=""),"Salmonellosis cases (detrended)")
+Pars_Plot_CI_Quant(Conditional_incidence_quant_info, salmonella_cases_detrend, Pars_Plot_CI_Quant)
 
 
 ############## Analysis for the Netherlands ------------------------------------------------------------------------------------------------
