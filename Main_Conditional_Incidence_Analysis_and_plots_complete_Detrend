@@ -145,7 +145,7 @@ Conditional_incidence_quant_info <-Conditional_prevalence_Quantile(Env_laborator
 
 
     ### Plot Conditional Incidence Quantile ### 
-    # Plot for 1, 2 or 3 weather factors
+    # Plot for 3 weather factors
 
 source("Function_Plot_CI_Quantiles.R")
 Pars_Plot_CI_Quant <- c(paste(variable_x,"_",variable_y,"_",variable_z,"_","time_series.tiff",sep=""),paste(variable_x,"_",variable_y,"_",variable_z,"_","yearly_average.tiff",sep=""),"Salmonellosis cases (detrended)")
