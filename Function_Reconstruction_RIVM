@@ -1,0 +1,71 @@
+Reconstruction_time_series_RIVM <-function(Conditional_incidence_unif_info, Data_frame_2, Pars)
+{
+  
+  with(as.list(c(Conditional_incidence_unif_info, Data_frame_2, Pars)), {
+    
+   
+    Conditional_incidence_unif <-Conditional_incidence_unif_info[[1]] 
+    Conditional_incidence_unif <- Conditional_incidence_unif[,-1]
+    breaks_x <-Conditional_incidence_unif_info[[4]]
+    breaks_y <-Conditional_incidence_unif_info[[3]]
+    breaks_z <-Conditional_incidence_unif_info[[2]]
+
+    variable_x <-Pars[1]
+    variable_y <-Pars[2]
+    variable_z <-Pars[3]
+    info <-Pars[4]  
+
+   # Remove weather variables outside UK range
+    Env_laboratory_data_all_RIVM <- Data_frame_2 [Data_frame_2[[variable_y]]>= min(Env_laboratory_data[[variable_y]]-delta_variable_y)&
+                                    Data_frame_2[[variable_y]]<= max(Env_laboratory_data[[variable_y]]+delta_variable_y) ,] 
+
+
+    # -- Daylength    
+    dt_day = data.table(breaks_daylength, val = breaks_daylength)
+    dt_day <- na.omit (dt_day)
+    setattr(dt_day, "sorted", "breaks_daylength")
+    dt_day2 <- dt_day[.(val = Env_laboratory_data_all_RIVM[[variable_z]]), on = "val", roll = "nearest"]
+
+    variable_df_6_2 <- as.data.frame(Env_laboratory_data_all_RIVM[,c("PostCode","Date", "residents")])
+    variable_df_6_2$day_break<- dt_day2$breaks_daylength
+    
+    
+    # -- Relative humidity 
+    dt_hum = data.table(breaks_hum, val = breaks_hum)
+    dt_hum <- na.omit (dt_hum)
+    setattr(dt_hum, "sorted", "delta_hum")
+
+    dt_hum2 <- dt_hum[.(val = Env_laboratory_data_all_RIVM[[variable_y]]), on = "val", roll = "nearest"]
+    variable_df_6_2$hum_break<- dt_hum2$breaks_hum
+    
+    
+    
+    # -- Temperature 
+    dt_temp = data.table(breaks_temperature, val = breaks_temperature)
+    dt_temp <- na.omit (dt_temp)
+    setattr(dt_temp, "sorted", "breaks_temperature")
+    dt_temp2 <- dt_temp[.(val = Env_laboratory_data_all_RIVM[[variable_x]]), on = "val", roll = "nearest"]
+
+    variable_df_6_2$temp_break <- dt_temp2$breaks_temperature
+    colnames(variable_df_6_2) <- c("PostCode","Date", "residents", variable_z, variable_y, variable_x)
+
+
+    variable_df_dis3 <- left_join (variable_df_6_2, Conditional_incidence_unif, by = c(variable_z, variable_y, variable_x)) # inner join, keep only matching values
+    variable_df_dis3 <- variable_df_dis3[variable_df_dis3$residents_tot > 1000000,] # remove small areas to avoid incidence bias 
+
+
+    # calculation of all the potential incidence based on the weather conditions of the area. The counts used as numerator correspond to the simulation of cases per weather condition.
+    variable_df_dis3$incidence <-variable_df_dis3$counts/variable_df_dis3$residents_tot 
+    variable_df_dis3$incidence[is.na(variable_df_dis3$incidence)] <- 0 # where no case was recorded, add a zero
+
+    comp_cases <-variable_df_dis3$incidence*variable_df_dis3$residents.x # estimation of the "real" incidence based on the possible cases due to weather and the residents number in the grid area
+    time_series <-data.frame(variable_df_dis3$Date, comp_cases, variable_df_dis3$incidence, variable_df_dis3$PostCode)
+    colnames(time_series) <-c("Date","Cases","Lambda","Lab")
+    
+    time_series <- distinct(time_series)
+
+    write.table(time_series, paste(variable_x,"_",variable_y,"_",variable_z,"_",width_char,info,sep=""), col.names= NA, row.names= TRUE, sep=",",eol= "\n") 
+    
+    }
+  )
+}
