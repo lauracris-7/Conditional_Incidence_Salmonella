@@ -1,0 +1,181 @@
+# The code does look at how the risk of salmonellosis in humans on a quantile division of the range of the environmental variables
+
+
+Conditional_incidence_Quantile <-function(Data_frame_1, Data_frame_2, Pars)
+{
+  
+  with(as.list(c(Data_frame_1, Data_frame_2,Pars)), {
+
+    variable_x<-Pars[1] 
+    variable_y<-Pars[2]
+    variable_z<-Pars[3]
+    info<- Pars[4]
+    by_x <-as.numeric(Pars[5])
+    by_y <-as.numeric(Pars[6])
+    by_z <-as.numeric(Pars[7])
+    
+    
+    # Select the variables of study:
+    Env_Laboratory_data_df <- Data_frame_1[,c("PostCode","Date", variable_x,variable_y,variable_z,
+                                              "residents")]
+    Env_Pathogen_data_df <- Data_frame_2[,c("PostCode","Date", variable_x,variable_y,variable_z,
+                                            "residents","Cases_computed")]
+    
+    
+    ################### Divide the domains of the variables in bins according to quantiles
+    
+    # Stratifications of the weather values according to the amount of observations. The bins collect the value of by_z (e.g. 25% of the data)
+    # Divisions for z= daylength
+    
+    breaks_z <-function (variable_z, by_z)
+    {
+      breaks_z <-as.numeric(quantile(na.omit(Env_Pathogen_data_df[[variable_z]]), probs=seq(0, 1, by=by_z), na.rm=TRUE))
+      breaks_z[length(breaks_z)] <-ceiling(as.numeric(quantile(na.omit(Env_Pathogen_data_df[[variable)z]]), probs=seq(0,1, by=by_z), na.rm=TRUE)))[length(breaks_z)]
+      breaks_z[1] <-floor(as.numeric(quantile(na.omit(Env_Pathogen_data_df[ ,index_Path]), probs=seq(0,1, by=by_z), na.rm=TRUE)))[1]
+      
+      return(breaks_z)
+    }
+    
+    #	Divisions for y= Relative_humidity
+    
+    breaks_y <-function (variable_z, variable_y, by_z, by_y, j_z)
+    {
+      
+      wt <-(findInterval(Env_Pathogen_data_df[[variable_z]], breaks_z(variable_z, by_z)))
+      ww <-which(wt==j_z)
+      Env_Pathogen_data_df_some <-Env_Pathogen_data_df[ww, ]
+      
+      if (length(Env_Pathogen_data_df_some[ ,1])!=0) {
+        
+        breaks_y <-as.numeric(quantile(na.omit(Env_Pathogen_data_df_some[[variable_y]]), probs=seq(0,1, by=by_y), na.rm=TRUE))
+        breaks_y[length(breaks_y)] <-ceiling(as.numeric(quantile(na.omit(Env_Pathogen_data_df_some[[variable_y]]), probs=seq(0, 1, by=by_y), na.rm=TRUE)))[length(breaks_y)]
+        breaks_y[1] <-floor(as.numeric(quantile(na.omit(Env_Pathogen_data_df_some[[variable_y]]), probs=seq(0, 1, by=by_y), na.rm=TRUE)))[1]
+        
+      }else{
+        
+        breaks_y <-c()
+      }
+      
+      return(breaks_y)
+    }
+    
+    #	Divisions for x=Maximum_air_temperature
+    
+    breaks_x <-function(variable_z, variable_y, variable_x, by_z, by_y, by_x, j_z, j_y)
+    {
+      wt <-(findInterval(Env_Pathogen_data_df[[variable_z]],breaks_z(variable_z, by_z)))
+      ww <-which(wt==j_z)
+      Env_Pathogen_data_df_some <-Env_Pathogen_data_df[ww, ]
+      
+      if(is.na(breaks_y(variable_z, variable_y, by_z, by_y, j_z)[j_y])=='FALSE')
+      {
+        wt2 <-(findInterval(Env_Pathogen_data_df_some[[variable_y]], breaks_y(variable_z, variable_y, by_z, by_y, j_z)))
+        ww2 <-which(wt2==j_y) 
+        Env_Pathogen_data_df_some2 <-Env_Pathogen_data_df_some[ww2, ]
+        
+        if (length(Env_Pathogen_data_df_some2[ ,1])!=0) 
+        {
+          breaks_x <-as.numeric(quantile(na.omit(Env_Pathogen_data_df_some2[[variable_x]]), probs=seq(0,1, by=by_x), na.rm=TRUE))
+          breaks_x[length(breaks_x)] <-ceiling(as.numeric(quantile(na.omit(Env_Pathogen_data_df_some2[[variable_x]]), probs=seq(0, 1, by=by_x), na.rm=TRUE)))[length(breaks_x)]
+          breaks_x[1] <-floor(as.numeric(quantile(na.omit(Env_Pathogen_data_df_some2[[variable_x]]), probs=seq(0,1, by=by_x), na.rm=TRUE)))[1]
+         } 
+        else 
+        { 
+          breaks_x <-c() 
+        }
+      }  
+      else 
+      {
+        breaks_x<-c()
+      }
+      return(breaks_x)
+    }
+    
+
+      ################# Create a data frame to fill:
+      
+      Conditional_incidence_quantiles <-data.frame(character(), character(),character(),numeric(),numeric(),numeric())
+      colnames(Conditional_incidence_quantiles) <-c(variable_z, variable_y, variable_x,"counts","residents","residents_tot")
+
+      
+      ##################### Grouping the values according to the breaks of each weather variable (x,y,z)
+      
+      j_z_min <-1 
+      j_z_max <-length(breaks_z(variable_z, by_z))
+      
+      # Grouping the values according to the breaks of each weather variable (x,y,z)
+      
+      for (j_z in c(j_z_min:j_z_max)){ 
+        
+        # below I round the values of the variables of interest in Env_Pathogen_data_df to the closest break value and get the index value of the nearest break
+        wt <- findInterval (Env_Pathogen_data_df[[variable_z]], breaks_z(variable_z, by_z))
+        ww <-which(wt==j_z)                                                                      # number of events when the variable coincides with the category
+        Env_Pathogen_data_df_z <-Env_Pathogen_data_df[ww, ]                                         # subset of all cases where daylength is between the category above
+        
+        #same for lab dataset
+        wt_t <- findInterval (Env_Laboratory_data_df[[variable_z]], breaks_z(variable_z, by_z))
+        ww_t <-which(wt_t==j_z)
+        Env_Laboratory_data_df_z <-Env_Laboratory_data_df[ww_t, ]
+        
+        if (length(Env_Pathogen_data_df_z[ ,1])!=0)                                                 # subsetting the same as above including humidity delimitation included
+        {
+          if (length(breaks_y(variable_z, variable_y, by_z, by_y, j_z))!=0)
+          {
+            j_y_min <- 1
+            j_y_max <-length(breaks_y(variable_z, variable_y, by_z, by_y, j_z))
+            
+            for (j_y in c(j_y_min:j_y_max)){                                                        # from the bins resulting above, find another variable stratification
+              
+              wt_y <- findInterval (Env_Pathogen_data_df_z[[variable_y]], breaks_y(variable_z, variable_y, by_z, by_y, j_z))
+              ww_y <-which(wt_y==j_y)
+              Env_Pathogen_data_df_y <-Env_Pathogen_data_df_z[ww_y, ]
+              
+              wt_y_t <- findInterval (Env_Laboratory_data_df_z[[variable_y]], breaks_y(variable_z, variable_y, by_z, by_y, j_z))
+              ww_y_t <-which(wt_y_t==j_y)
+              Env_Laboratory_data_df_y <-Env_Laboratory_data_df_z[ww_y_t, ] 
+              
+              
+              if (length(breaks_x(variable_z, variable_y, variable_x, by_z, by_y, by_x, j_z, j_y))!=0)
+              {
+                j_x_min <-1
+                j_x_max <- length(breaks_x(variable_z,variable_y,variable_x,by_z,by_y,by_x,j_z,j_y))
+                
+                for (j_x in c(j_x_min:j_x_max)){
+                  
+                  wt_x <- findInterval (Env_Pathogen_data_df_y[[variable_x]], breaks_x(variable_z,variable_y,variable_x,by_z,by_y,by_x,j_z,j_y))
+                  ww_x <-which(wt_x==j_x)
+                  Yt1 <-Env_Pathogen_data_df_y[ww_x,] #where there are cases for specific values of the 3 weather variables. residents is the number of people exposed to these situations during the entire duration of the dataset. It is the number of times the people is exposed to this caracteristics, only when a case is found. It can count a same catchment area twice. Residents total is the same irrespectively of the presence of a case
+                  
+                  
+                  wt_x_t <- findInterval (Env_Laboratory_data_df_y[[variable_x]], breaks_x(variable_z,variable_y,variable_x,by_z,by_y,by_x,j_z,j_y))
+                  ww_x_t <-which(wt_x_t==j_x)
+                  Y_tot <-Env_Laboratory_data_df_y[ww_x_t, ]
+                  
+                  Total_cases <-sum((as.numeric(na.omit(Yt1$Cases_computed))))
+                  residents <-sum((as.numeric(na.omit(Yt1$residents)))) # this was not used
+                  residents_tot <-sum((as.numeric(na.omit(Y_tot$residents)))) #number of people exposed to these weather conditions. Will be used to calculate the incidence
+
+ 
+                  data_df <-data.frame (
+                    breaks_z(variable_z, by_z)[j_z],
+                    breaks_y(variable_z, variable_y, by_z, by_y, j_z)[j_y],
+                    breaks_x(variable_z, variable_y, variable_x, by_z, by_y, by_x, j_z, j_y)[j_x],
+                    Total_cases,
+                    residents,
+                    residents_tot
+                  )
+                  
+                  colnames(data_df) <-c(variable_z, variable_y, variable_x,"counts","residents","residents_tot")
+                  Conditional_incidence_quantiles <-rbind(Conditional_incidence_quantiles, data_df) 
+                  print(c(j_x, j_y,j_z, Total_cases))  # Ccheck the output while the loop is running
+                }
+              }
+            }
+          }
+        }
+      }
+      
+    write.csv(Conditional_incidence_quantiles, paste("Conditional_probability_",variable_x,"_",variable_y,"_",variable_z,"_quantile_detrend_2000-2016.csv",sep=""))
+  })
+}
+
