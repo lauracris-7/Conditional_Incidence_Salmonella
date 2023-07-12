@@ -1,0 +1,101 @@
+######### Plot of 3 simultaneous weather factors in a quantile distribution of its values #########
+
+Plot_Cond_Prev_Quantiles <- function (Data_frame_1, Data_frame_2,Pars)
+{
+  
+  with(as.list(c(Data_frame_1, Data_frame_2,Pars)), {
+    
+    Conditional_incidence_quantiles <-Data_frame_1
+    empirical_time_series <-Data_frame_2
+    y_lab_text<-Pars[1]
+    
+    Conditional_incidence_quantiles$incidence <-Conditional_incidence_quantiles$counts/Conditional_incidence_quantiles$residents_tot
+    # Normalize incidence per 10,000,000 habitants to normalize the plots later
+    norm <- 1/1e7 # time steps are included in the data itself, so no need to divide the number of days
+    labelling_char<-c()
+
+    for (i_light in c(1:length(unique(Conditional_incidence_quantiles[[variable]])))){
+
+    light_label <-round(as.numeric(unique(Conditional_incidence_quantiles[[variable]])))
+    
+    if (i_light < length(light_label)){ 
+      
+      light_label_char <-paste(variable.char," [",light_label[i_light],"-",light_label[i_light+1],") ",units.z, sep="")
+    } else {
+      light_label_char<-paste(variable.char," >",light_label[i_light]," ",units.z, sep="")
+    }
+      
+    
+    wt <-which(Conditional_incidence_quantiles[[variable]]==unique(Conditional_incidence_quantiles[[variable]])[i_light])
+    Conditional_incidence_df <-Conditional_incidence_quantiles[wt,] # Here we have selected the rows of the df corresponding with each of the 4 daylength bins (n=40 rows)
+    Conditional_incidence_df <-Conditional_incidence_df[order(Conditional_incidence_df[[variable_y]]),]     
+    
+
+      Conditional_incidence_df$incidence <-Conditional_incidence_df$incidence/norm
+      
+      y=Conditional_incidence_df$counts 
+      n=Conditional_incidence_df$residents_tot # input data as frequencies
+      
+      pw=(y + 2)/(n + 4) # Wilson's point estimate
+      Wald_adj_lower <- (pw-2*sqrt(pw*(1-pw)/n))/norm # Lower conf. limit. by using 2 we are "approximating". Opted to use this method by suggestion of the textbook
+      Wald_adj_upper <- (pw+2*sqrt(pw*(1-pw)/n))/norm  # Upper conf. limit 
+
+      
+      Conditional_incidence_df$conf_minus <-Wald_adj_lower
+      Conditional_incidence_df$conf_plus <-Wald_adj_upper
+      Conditional_incidence_df <-na.omit(Conditional_incidence_df)
+      
+      
+      Conditional_incidence_df[[variable_y]] <-round(Conditional_incidence_df[[variable_y]])
+      
+
+      # Automatize labels naming:
+      labelling <-c(round(as.numeric(unique(Conditional_incidence_df[[variable_y]]))))
+      n_labelling <-length(labelling)
+      
+      for (j in c(1:(n_labelling-1)))      
+      {
+        labelling_char[j]<-paste(as.character(labelling[j]), "-", as.character(labelling[j+1]) )
+      }
+      
+      labelling_char[n_labelling] <-paste(">",as.character(labelling[n_labelling]))
+
+      
+      ### Plots ###
+      
+      Conditional_incidence_plot  <- ggplot(Conditional_incidence_df, 
+                                aes(x=.data[[variable_x]], y=incidence, color=factor(.data[[variable_y]]), fill=factor(.data[[variable_y]])))+
+        theme_bw(20)+ 
+        scale_colour_discrete(name= paste(variable_y, units.y))+
+        scale_fill_discrete(name= paste(variable_y.char, units.y), labels=labelling_char) +
+        geom_point(size=3.5)+ guides(colour="none")+
+        geom_line(linewidth=1)+
+        geom_ribbon(aes(ymin=conf_minus, ymax=conf_plus), alpha=0.35)+
+        
+        ylab("Conditional Incidence of salmonellosis Cases (per 10 million)")+
+        xlab(paste(variable_x.char, units.x))+ 
+        ggtitle(light_label_char) +
+          
+        theme(legend.position= c(0.2,0.85), legend.title = element_text (size = 11),  # try legend position c(0.2,0.8), if re run !!
+              legend.text = element_text (size = 10),legend.background = element_blank(),
+              legend.key=element_rect(colour=NA),
+              
+              axis.title.x =element_text (colour="#990000", size=15),
+              axis.title.y =element_text (colour="#990000", size=15)) +
+          
+        scale_x_continuous(limits=c(min(Conditional_incidence_quantiles[variable_x]),max(Conditional_incidence_quantiles[variable_x]))) +
+        scale_y_continuous(limits=c(1, 7.5))
+        #scale_y_continuous(limits=c(0, 0.5)) # radiation. Not sure why the risk is 10 fold lower...
+
+
+      file_name<-paste(variable_x,"_",variable_y,"_",variable,"_",round(unique(Conditional_incidence_quantiles[[variable]])[i_light]),"_",width_char,"_quantile_detrend.v2.tiff", sep = "")
+      tiff(filename = file_name,width = 17.35, height =  17.35, units = "cm", pointsize = 12, res = 1200,compression = "lzw",antialias="default")
+      
+      print(Conditional_incidence_plot)  
+      
+      dev.off()
+      
+    }
+
+  }
+}
