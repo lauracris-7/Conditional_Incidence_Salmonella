@@ -1,0 +1,133 @@
+# Plot Reconstruction of Time series and compare with empirical data
+
+Plot_Reconstruction_time_series_RIVM <-function(Data_frame_1, Data_frame_2,Pars)
+{
+  
+  with(as.list(c(Data_frame_1, Data_frame_2,Pars)), {
+    
+    time_series_Post_Codes<-Data_frame_1
+    empirical_time_series<-Data_frame_2
+    file_name_ts<-Pars[1]
+    file_name_yearly<-Pars[2]
+    y_lab_text<-Pars[3]
+    
+colnames(time_series_Post_Codes) <-c("Date","Cases","Lambda","PostCode")
+time_series <-aggregate (Cases ~ Date, time_series_Post_Codes, sum)  # get the national mean of the cases per day for all the PC
+
+time_series_summary <-data.frame(time_series, rep("Model",times=length(time_series[,1]))) 
+colnames(time_series_summary)<-c("Date","Cases","source")
+
+empirical_time_series_agg <-aggregate (Cases ~ Date, empirical_time_series, sum)  # get the national mean of the cases per day for all the PC
+
+real_cases_summary <-cbind(empirical_time_series_agg,rep("Cases",times=length(empirical_time_series_agg[,1])))
+colnames(real_cases_summary)<-c("Date","Cases","source")              
+
+
+time_series_all <-rbind(time_series_summary, real_cases_summary)
+
+
+############## Plot1. Average per day of the year ##############
+
+pal<-wes_palette("Cavalcanti1")
+time_series_plot <-ggplot(time_series_all, aes(x=Date, y=Mean, colour=source, group=year(Date)))+
+  
+  geom_line(linewidth=0.75) + theme_bw()+
+
+  scale_color_manual(values=wes_palette (n=2, name="Cavalcanti1"))+
+  
+  xlab("Date") + ylab("Salmonellosis Cases")+
+  #scale_y_continuous(limit=c(0,20))+
+  #scale_x_date (date_labels= "%Y", date_breaks="1 year")+
+  #scale_x_continuous(breaks=tick_pos.y, labels=year_2015) +
+  scale_x_discrete(drop=F,breaks=tick_pos.y, labels=year_2015) +
+
+  geom_vline (xintercept = "2015-12-31")+
+  
+  theme(legend.position = c(0.90,0.95), legend.title =element_blank(),
+        legend.text = element_text(size = 16), legend.background = element_blank(),
+        legend.key= element_rect(colour=NA, fill=NA),
+        
+        axis.title.x =element_text( colour="#990000", size=20),
+        axis.title.y =element_text( colour="#990000", size=20),
+        axis.line = element_line(colour = "black"),
+        panel.border=element_blank())
+
+print(time_series_plot)
+
+# Save plot
+tiff(filename = file_name_ts,width = 34.7, height =  17.35, units = "cm", pointsize = 15, res = 600,compression = "lzw",antialias="default")
+print(time_series_plot)
+dev.off()
+
+
+
+############## Plot2. Yearly Average for all years superimposed ##############
+
+time_series$yday <-as.factor(yday(time_series$Date))
+
+time_series_average1 <-ddply(time_series,~yday, summarise, mean=mean(Cases)) # mean of all cases for the same day of the year
+time_series_quantile1 <-ddply(time_series,~yday, function (x) quantile(x$Cases, c(.25,.5,.75))) # quantiles of cases for all the years for the same day of the year
+time_series_average <-cbind(time_series_average1,time_series_quantile1[,-1])
+
+empirical_time_series_agg$yday<-as.factor(yday(as.Date(as.character(empirical_time_series_agg$Date))))
+real_cases_average1<-ddply(empirical_time_series_agg,~yday,summarise,mean=mean(Cases))
+real_cases_quantile1<-ddply(empirical_time_series_agg,~yday,function (x) quantile(x$Cases, c(.25,.5,.75)))
+real_cases_average2<-cbind(real_cases_average1,real_cases_quantile1[,-1])
+real_cases_average<-
+  data.frame(real_cases_average2[,1],real_cases_average2[,c(2:5)])
+
+
+df1 <-data.frame(real_cases_average,rep("Cases",times=length(real_cases_average[,1])))
+colnames(df1) <-c("Day","Mean","f_quant","median","s_quant","source")
+df2 <-data.frame(time_series_average,rep("Model",times=length(time_series_average[,1])))
+colnames(df2) <-c("Day","Mean","f_quant","median","s_quant","source")
+
+average_data <-rbind(df1,df2)
+average_data$Day <-as.numeric(average_data$Day)
+
+## We get one of the years as example to plot the date, in this case 2014, but could be any year within our data set.
+month_2014 <-month.abb[unique(month(as.Date(average_data$Day, origin = "2014-01-01")))]
+
+tick_pos<-yday(as.Date(as.character(
+  c("2014-01-01","2014-02-01","2014-03-01","2014-04-01","2014-05-01","2014-06-01",
+    "2014-07-01","2014-08-01","2014-09-01","2014-10-01","2014-11-01","2014-12-01")
+)))
+
+
+
+yearly_average <-ggplot(average_data, aes(x=Day, y=Mean, colour=source))+
+  geom_line(linewidth=1.5) + theme_bw()+
+  geom_ribbon(aes(ymin=f_quant, ymax=s_quant, fill=source), alpha=0.15) +
+  xlab("Date") + ylab(y_lab_text) +
+  
+  scale_x_continuous(breaks=tick_pos, labels=month_2014) +
+  
+  theme(legend.position= c(0.125,0.85),legend.title =  element_text( size = 12),
+        legend.text = element_text( size = 16),legend.background = element_blank(),
+        legend.key=element_rect(colour=NA,fill=NA),
+  
+        axis.title.x =element_text( colour="#990000", size=20),
+        axis.text= element_text(size=16),
+        plot.title= element_text(size=16),
+ 
+        axis.title.y =element_text( colour="#990000", size=20),
+        axis.line = element_line(colour = "black"),
+        panel.border=element_blank()) +
+
+  ggtitle(paste0(variable_x.char,", ", variable_y.char,", ", variable.char))
+
+
+print(yearly_average)
+
+
+# Save the plot:
+
+tiff(filename = file_name_yearly, width = 17.35, height =  17.35, units = "cm", pointsize = 9, res = 600,compression = "lzw", antialias="default")
+print(yearly_average)
+dev.off()
+
+return()
+
+})
+}
+
