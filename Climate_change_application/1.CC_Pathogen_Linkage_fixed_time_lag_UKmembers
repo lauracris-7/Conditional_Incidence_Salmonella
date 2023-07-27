@@ -1,0 +1,227 @@
+# The code associates the value of the environmental variables to the Salmonella cases at the location (from the diagnostic laboratory postcode) and date of occurrence with a chosen time-time_lag
+# there are two outputs: i) averaged environmental variables for each day/postcode for all diagnostic laboratories (so even if there are no cases on a particular day)
+# and ii) the averaged environmental variables for the day/postcode where there was a Salmonella case
+
+rm(list=ls(all=TRUE)) 
+
+my_packages <- c( 
+  ("ISOweek"),
+  ("lubridate"),
+  ("ggplot2"),
+  ("MASS"),
+  ("scales"),
+  ("pheno"),
+  ("timeDate"),
+  ("pastecs"),
+  ("stringi"),
+  ("timeSeries"),
+  ("xts"),
+  ("plyr"),
+  ("dplyr"),
+  ("data.table"),
+  ("tidyr"),
+  ("purrr"),
+  ("tools"),
+  ("PCICt"),
+  ("tibble"),
+  ("stringr")
+)
+
+lapply(my_packages, require, character.only = TRUE)  
+
+################ Define the chosen time lag here ###############################
+
+time_lag <- 7 # This lag comprises the span of time for which environmental factors start to have an effect on the risk of infection and disease notification.  
+# 7 days is the result that matched best after try and error criteria. But it also matches with the mean reporting delay calculated with the uniform and gamma distribution of every summed delay (6.23 days).
+time_lag_char <-paste(time_lag) # this will be used in the final step to write the output
+
+
+
+
+####### STEP 1. Read all variables to work with ####
+
+# Upload residents projection for England and Wales for 2025-2043 obtained from the Office for National Statistics and Statswales
+# The space unit is 25 km grid. 
+
+catchment_population_df <- read.csv("/Climate change/Grid60km_Pop.projections_Climate.projections.csv")
+catchment_population_df <- catchment_population_df [,-c(2, 8,9)]
+colnames(catchment_population_df) <- c("id",
+                                       "residents_2025",
+                                       "residents_2030",
+                                       "residents_2035",
+                                       "residents_2040",
+                                       "residents_2043"
+)
+
+catchment_population_long <- pivot_longer(catchment_population_df [,c("id",
+                                                                      "residents_2025",
+                                                                      "residents_2030",
+                                                                      "residents_2035",
+                                                                      "residents_2040",
+                                                                      "residents_2043")], -id)
+catchment_population_long <- as.data.frame(catchment_population_long)
+colnames(catchment_population_long) <- c("id", "year","residents")
+catchment_population_long$year <- str_sub(catchment_population_long$year,-4)
+
+
+
+X0 <- sprintf("%02d",c(1:9)) # get the zero in front of the single digits
+#rest <- as.character(10:28) # for all the members
+rest <- as.character(10:15)  # for the UK members
+member <- c(X0,rest)
+
+year <- c("2025", "2030", "2035", "2040", "2043")
+
+mainDir <- "/Climate change/"
+
+#STEP 2, include also day length according to the function below based on latitude and time of the year (Forsythe W. et al., 1995)
+
+######################## include day length ##################
+
+Coord_laboratory <- read.csv("/Climate change/Grid60km_coordinates_degrees_WGS4326.csv")
+colnames(Coord_laboratory) <- c("id", "lon_meters", "lat_meters", "lon", "lat")
+
+
+# Formula to calculate daylength from the latitude and day of the year
+
+daylength <- function (lat, day_year)
+{
+  # Latitude measure in degrees
+  P <- asin(0.39795*cos(0.2163108 + 2*atan(0.9671396*tan(0.00860*(day_year-186)))))
+  Denom <- cos(lat*pi/180)*cos(P) 
+  Numer <- sin(0.8333*pi/180) + sin(lat*pi/180)*sin(P)
+  D <- 24-(24/pi)*acos(Numer/Denom)
+  return(D)
+}
+
+
+## end daylength ##
+
+
+
+## This create a database for all laboratories postcode, even if there were zero cases. See if this is equivalent to weatherALL_coordinates
+
+### This function calculate the average values of the environmental variables over a certain time-time_lag
+
+# Read one file as an example to extract the PC and dates from it:
+
+
+
+time_lag_PC <- function(lab_fac, df){
+  
+  lab <- as.numeric(lab_fac)
+  
+  complete_variable_df2 <- df
+  merged_lab_sub <- subset(complete_variable_df2, complete_variable_df2$id==lab) # extract the information grid by grid. The resident info is at grid level
+  merged_lab_sub2 <- merged_lab_sub[order(as.Date(merged_lab_sub$Date)),] # order by date
+  
+  
+  mean_Maximum_air_temperature <-rollmean(merged_lab_sub2$tasmax, time_lag)
+  mean_Precipitation <-rollmean(merged_lab_sub2$pr, time_lag)
+  #mean_Relative_humidity <-rollmean(merged_lab_sub2$UG, time_lag)
+  mean_daylength <-rollmean(merged_lab_sub2$daylength, time_lag)
+  #mean_Global_radiation <-rollmean(merged_lab_sub2$Q, time_lag)
+  
+  
+  #mean_residents <- round(rollmean(merged_lab_sub2$residents, time_lag)) 
+  mean_residents <- merged_lab_sub2$residents # I decided not to do the rollmean to keep the same numbers in every year to later use for giving size to the data frame.
+  mean_residents2 <- mean_residents [-(1:6)] # remove first elements to match with the dimensions of the rollmean data frame (-6 first instances)
+  
+  PC <- rep(unique(as.numeric(as.character(merged_lab_sub$id))), times=length(mean_residents2))
+  ep <- seq(time_lag, length(mean_residents2) + time_lag-1)  # this will correct the date in the data frame below for the first 7 days removed when doing the rollmean
+  dates_s <- as.Date(as.character(unique(complete_variable_df2$Date)), format="%Y-%m-%d") 
+  
+  Laboratories_environment_time_lag <- data.frame (PC, dates_s[ep],
+                                                   mean_Maximum_air_temperature,
+                                                   mean_Precipitation,     
+                                                   mean_daylength,
+                                                   mean_residents2)
+  
+  return(Laboratories_environment_time_lag)
+  
+}
+
+
+##### STEP 4 Create a data frame that put together, for each day and location all the environmental variables and residents ####
+# The 25km grids do not include Scotland, North Ireland nor the squares whose center point is not in land.
+
+variable_df <- read.csv("../Data/Climate/CEDA_globalproj60km_bulk/Outputs/global60km_pr_01_2025_EW-id.csv")
+
+
+Laboratories_environment <-c()
+
+
+#index_PC <-unique(as.numeric(as.character(complete_variable_df2$id))) # bare in mind that these are not the comprehensive patients PC, only some. The rest will be added wheen the cases are sumed
+#index_PC <- sort(index_PC, decreasing=FALSE)
+index_PC <-unique(as.numeric(as.character(Coord_laboratory$id))) # bare in mind that these are not the comprehensive patients PC, only some. The rest will be added wheen the cases are sumed
+index_PC <- sort(index_PC, decreasing=FALSE)
+
+
+###### Calculate the daylength and apply the rolling mean to the weather variables in one loop:
+
+for (h in member) {
+  
+  for (k in year)
+  {
+    variable_df <- read.csv(paste("../Data/Climate/CEDA_globalproj60km_bulk/Outputs/temp_precip_",h,"_",k,".csv",sep=""))
+   
+    
+    variable_df$Date <- as.Date(variable_df$Date, format="%Y/%m/%d")
+    variable_df <- variable_df [complete.cases(variable_df),] # Remove rows with NA (i.e., Feb 30th)
+    variable_df$day_of_the_year <- yday(variable_df$Date)
+    variable_df$id <- substr (variable_df$id, 2,3)
+
+    selection <- select(catchment_population_df, contains (k), id) 
+    complete_variable_df <- cbind (variable_df, selection)
+    
+    complete_variable_df2 <- cbind (complete_variable_df, Coord_laboratory$lat)
+    colnames(complete_variable_df2) [9] <- "latitude"
+    
+    complete_variable_df2$daylength <- mapply(daylength, complete_variable_df2$latitude, complete_variable_df2$day_of_the_year)
+    complete_variable_df2 <- complete_variable_df2 [,-3]
+    colnames(complete_variable_df2)[6] <- "residents"
+
+    df <- complete_variable_df2
+    
+    for (i in c(1:length(index_PC))){
+      
+      Laboratories_environment <- rbind(Laboratories_environment, lapply(index_PC[i], time_lag_PC, df = df)[[1]])
+    
+      }
+    
+    csvpath.out <- paste0(mainDir,"Working_outputs/")
+    csvname.cropped <- paste0("Environment_Laboratories_linkage_",h,"_",k,"_EW-id.csv")
+    csvfile.cropped <- paste(csvpath.out, csvname.cropped, sep="")
+    
+    names(Laboratories_environment)[c(1,2)] <-c("id","Date")
+       assign (paste0("Environment_Laboratories_linkage_",h,"_",k,"_EW-id.csv"), Laboratories_environment, envir= globalenv())
+    
+
+    #write.csv(Laboratories_environment, csvfile.cropped)
+    Laboratories_environment <-c()
+
+  }
+    
+}
+
+# Combine all weather parameters for the same member
+
+datanames <- list.files("/Climate change/Working_outputs/", pattern= "Environment_Laboratories_linkage_*", full.names=FALSE) 
+
+# uncomment assign in the loop above to have all the data frames available in the global environment
+
+
+for (h in member) {
+  
+  #files_to_bind <- datanames[grepl( h , substr(datanames, 129,130)) ] #member for the full datanames name
+  files_to_bind <- datanames[grepl( h , substr(datanames, 34,35)) ]
+  combine_data <- do.call(rbind, mget(files_to_bind))
+
+#  write.csv(combine_data, paste0("Climate change/Env_Lab_linkage_",h,"_allYears.csv"))
+  
+}
+
+
+################ End of linkage ###############################
+
+
