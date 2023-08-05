@@ -1,0 +1,298 @@
+# Data manipulation for creating the plots
+
+
+rm(list=ls(all=TRUE)) 
+setwd("Climate change")
+ 
+library(ISOweek)
+library(lubridate)
+library(ggplot2)
+require(MASS)
+library(scales)
+library(timeDate)
+library(pastecs)
+library(stringi)
+library(wesanderson)
+library(plyr)
+library(dplyr)
+library(tidyr)
+library(tidyverse)
+
+
+
+width <-7
+width_char <-paste(width)
+
+
+# Reminder of variables: 
+variable_x <-"Maximum_air_temperature" 
+variable_y <-"Mean_Precipitation"
+variable <-"daylength"
+
+years_study <- c(2025, 2030, 2035, 2040, 2043)
+
+### Read all data required for calculating the expected number of cases according to the actual reported cases ####
+
+# Read the cases reported to PHE adjusted for the reporting delay(s) AND detrended
+
+real_cases_all <- read.csv("../salmonella_cases_detrend.csv")
+real_cases_all <- as.data.frame(real_cases_all[,c("date", "PostCode", "Cases_det_adjusted")])
+colnames(real_cases_all) <- c("Prob_date_infection", "id", "Number_cases") # detrended
+
+real_cases_all$Prob_date_infection <- as.Date(real_cases_all$Prob_date_infection, format="%Y-%m-%d")
+
+  # Real cases at national level:
+real_cases <-ddply(real_cases_all,~Prob_date_infection,summarise,sum=sum(Number_cases)) # use cases with sum, or cases_norm with average
+colnames(real_cases) <-c("Date","Cases")  
+real_cases$yday <-as.factor(yday(as.Date(as.character(real_cases$Date))))
+
+real_cases_all_detrend <- real_cases
+
+
+
+# Alternative to use real cases dtrend:
+real_cases_average1 <-ddply(real_cases_all_detrend, ~yday, summarise, mean=mean(Cases))   # average number of cases per day of the year for all years, for all idgrid
+real_cases_quantile1 <-ddply(real_cases_all_detrend, ~yday,function (x) quantile(x$Cases, c(.25,.5,.75))) # quantiles of the sum of cases per date
+
+
+real_cases_average <-cbind(real_cases_average1, real_cases_quantile1[,-1])
+real_cases_average$yday <- as.numeric(as.character(real_cases_average$yday))
+
+
+
+
+######## Plots 
+
+#### Plot1: Average cases per day of the year #####
+# Loop to make the yearly plot for all the members
+
+temp = 	list.files("Climate change/",pattern="Env_Lab_linkage_*")
+average_data.bind <- c()
+average_data_allmb_allyears <- c()
+
+for (i in 1:length(temp)) {
+  
+  # Read Linkage file
+  Env_laboratory_data <- read.csv(temp[i])
+  Env_laboratory_data <- Env_laboratory_data [,-1]
+  names(Env_laboratory_data)[c(3:6)] <-c(variable_x, variable_y, variable, "residents")
+  
+  
+  for (j in years_study) {
+
+    # Read time series of weather values reconstructed for the future following climate change projections // trial +2C
+    time_series1 <-read.csv(paste0(variable,"_",variable_x,"_",variable_y,"_",width_char,"_reconstructed_member_",i,"_Detrend_extrapolation.csv")) # df with extrapolated values
+    
+    time_series <-time_series1[,-1]
+    time_series$Date <- as.Date(time_series$Date, format="%Y-%m-%d")
+    colnames(time_series) <-c("Date","Cases","Lambda","id")
+    time_series$id <- as.numeric (time_series$id) 
+
+    year_focus <- j
+    year_focus_char <-as.character(year_focus)
+    time_series <- time_series [year(time_series$Date) ==year_focus,]
+    
+
+    time_series_sum<-ddply(time_series,~Date,summarise, sum=sum(Cases))   # For the same day, I am summing over the different ID, for all England and Wales 
+    
+    time_series_summary<-data.frame(time_series_sum, rep("Model",times=length(time_series_sum[,1]))) 
+    colnames(time_series_summary)<-c("Date","Cases","source") 
+    
+    
+    time_series_summary$yday <-as.factor(yday(time_series_summary$Date)) #LAURA, check this. I think it is redundant because 1 year only
+    
+
+    time_series_average1 <-ddply(time_series_summary,~yday, summarise, mean=mean(Cases)) 
+    time_series_quantile1 <-ddply(time_series_summary,~yday, function (x) quantile(x$Cases, c(.25,.5,.75)))
+    
+    time_series_average <-cbind(time_series_average1,time_series_quantile1[,-1])
+    
+
+    
+    # Join both reported cases with the modelled ones by day of the year in order to be comparable
+    
+    df1 <-data.frame(real_cases_average,rep("Cases",times=length(real_cases_average[,1])))
+    colnames(df1) <-c("Day","Mean","f_quant","median","s_quant","source")
+    df2 <-data.frame(time_series_average,rep("Model",times=length(time_series_average[,1])))
+    colnames(df2) <-c("Day","Mean","f_quant","median","s_quant","source")
+    
+    average_data <-rbind(df1,df2)
+    average_data$Day <-as.numeric(average_data$Day)
+    average_data$year <- j
+    average_data$member <- i
+    
+    # Build a data frame that binds all the average data for all the years and members
+    
+    average_data.bind <- rbind(average_data.bind, average_data)
+    
+    
+    ## We get one of the years as example to plot the date, in this case 2014, but could be any year within our data set.
+    
+    average_data$Day = as.Date (average_data$Day, origin = "2014-01-01" )  #giving all the data frame a random date in common to be able to plot together. Check??
+    
+
+  }
+
+  # Join all the members for all the years:
+  average_data_allmb_allyears <- rbind(average_data_allmb_allyears, average_data.bind)
+
+}
+
+average_data_allmb_allyears <- unique (average_data_allmb_allyears)
+
+# Remove all members but one for the reported cases, since it is not applicable
+average_data_allmb_allyears2 <- average_data_allmb_allyears [!duplicated(average_data_allmb_allyears[c(2,3,4,5)]),]
+
+
+
+
+### Loop Plot1: Join all the members for a same year ####
+
+# Read the data frame with the cases of all the members and years
+
+average_data_allmb_Allyears_Cases <- average_data_allmb_allyears2 [average_data_allmb_allyears2$source=="Cases",] # Common cases dataset for all the simulations.
+
+for (j in years_study){
+
+  average_data_allmb_yearX <- average_data_allmb_allyears2[average_data_allmb_allyears2$year==j,]
+  average_data_allmb_yearX_Model <- average_data_allmb_yearX [average_data_allmb_yearX$source== "Model",]
+
+
+  # Create a new data frame with the min, max and mean of every member for a same day.
+  day.number <- unique (average_data_allmb_yearX_Model$Day)
+  cases.model_summary <- c()
+  cases.model_summary2 <- c()
+ 
+  for (i in day.number){
+    
+    cases.day <- average_data_allmb_yearX_Model [average_data_allmb_yearX_Model$Day==i,]
+    cases.model_summary <- as.data.frame (cases.day)
+    cases.model_summary$min <- min(cases.day$Mean)
+    cases.model_summary$max <- max(cases.day$Mean)
+    cases.model_summary$mean <-mean(cases.day$Mean)
+    
+    cases.model_summary <- cases.model_summary[,-c(2:5)] %>% unique
+    cases.model_summary2 <- rbind(cases.model_summary2,cases.model_summary)
+    }
+  cases.model_summary2 <- unique (cases.model_summary2) # *data frame to plot*
+  colnames(cases.model_summary2)[c(5,6,7)]<- c("min_plot","max_plot","mean_plot") 
+  
+month_2014 <- readRDS("month_2014.rds") # read in case needed.
+
+# Calculate the proportion of cases increased in the climate change projection:
+cases.model_summary3 <- cases.model_summary2[cases.model_summary2$member==1,]
+increment_CC <- sum (average_data_allmb_Allyears_Cases$median/cases.model_summary3$mean)
+
+  # Plot of yearly cases: 
+
+yearly_average_allmb <-ggplot() +  # use "cases.model_summary2" for the modeled cases and "average_data_allmb_Allyears_Cases" for empirical cases
+                               ...
+  
+}
+
+
+
+#### Plot2: Comparative weather 1999-2016 separating precipitation from temperature ####
+
+
+# Filter for years studied
+diagnostic_laboratory_df2$dates <- as.Date(diagnostic_laboratory_df2$dates, "%Y-%m-%d")
+
+diagnostic_laboratory_99_16 <- filter(diagnostic_laboratory_df2, year(diagnostic_laboratory_df2$dates)>=1999 & year(diagnostic_laboratory_df2$dates)<=2016)
+diagnostic_laboratory_99_16 <- diagnostic_laboratory_99_16[,-1] 
+
+
+
+# Apply the mean for all the PC
+
+weather_day_avg_9916 <- aggregate(diagnostic_laboratory_99_16 [c("Global_radiation", "Maximum_air_temperature", "Precipitation", "Relative_humidity", "daylength")],
+                                  by= list(diagnostic_laboratory_99_16$dates),
+                                  mean)
+colnames(weather_day_avg_9916)[1]<-"Date"
+weather_day_avg_9916$yday <- yday(weather_day_avg_9916$Date)
+
+# Output: weather_day_avg_9916
+
+# Option2: in case we want to plot the min and max value for the whole country as well:
+weather19_summary <- c()
+weather19_summary2 <- c()
+
+diagnostic_laboratory_99_16$dates <- as.Date(diagnostic_laboratory_99_16$dates, "%Y-%m-%d")
+diagnostic_laboratory_99_16$yday <- yday(diagnostic_laboratory_99_16$dates)
+
+day.number <- unique ((diagnostic_laboratory_99_16$yday))
+
+
+
+for (j in day.number){
+
+  
+  weather19_AllPC_day <- filter (diagnostic_laboratory_99_16, yday==j)  # attention, I keep the same name but it is for years 1999-2016
+  
+  weather19_summary <- as.data.frame(weather19_AllPC_day)
+  
+  weather19_summary$Tmax_min <- min(weather19_AllPC_day$Maximum_air_temperature)
+  weather19_summary$Tmax_max <- max(weather19_AllPC_day$Maximum_air_temperature)
+  weather19_summary$Tmax_mean <-mean(weather19_AllPC_day$Maximum_air_temperature)
+  
+  weather19_summary$Precip_min <- min(weather19_AllPC_day$Precipitation)
+  weather19_summary$Precip_max <- max(weather19_AllPC_day$Precipitation)
+  weather19_summary$Precip_mean <-mean(weather19_AllPC_day$Precipitation)
+  
+
+  weather19_summary$daylength_mean <-mean(weather19_AllPC_day$daylength)
+  weather19_summary <- weather19_summary[,-c(1,3:7)] %>% unique
+  weather19_summary2 <- rbind(weather19_summary2,weather19_summary)
+  
+}
+
+weather19_summary2 <- unique (weather19_summary2) # *data frame to plot* years 1999-2016
+
+
+
+for (m in years_study){
+  weather_allmb_yearX <- filter (weather.proj_allmb_allyears, year(Date)== m)
+  
+  
+  # 3.Plot comparative of weather values for the RCP8.3 of selected years:
+  
+  # Create a new data frame with the min, max and mean of every member for a same day.
+  day.number <- unique (weather_allmb_yearX$yday)
+  weather.proj_summary <- c()
+  weather.proj_summary2 <- c()
+  
+  for (j in day.number){
+    
+    weather19.day <- filter (weather_day_avg_9916, yday==j) # Daily mean of the weather conditions for E+W
+    
+    Env_laboratory_data2 <- filter (weather_allmb_yearX, yday==j)
+    weather.proj_summary <- as.data.frame (Env_laboratory_data2)
+    weather.proj_summary$Tmax_min  <- min(Env_laboratory_data2$Maximum_air_temperature)
+    weather.proj_summary$Tmax_max  <- max(Env_laboratory_data2$Maximum_air_temperature)
+    weather.proj_summary$Tmax_mean  <- mean(Env_laboratory_data2$Maximum_air_temperature)
+    
+    weather.proj_summary$Precip_min  <- min(Env_laboratory_data2$Mean_Precipitation)
+    weather.proj_summary$Precip_max  <- max(Env_laboratory_data2$Mean_Precipitation)
+    weather.proj_summary$Precip_mean  <- mean(Env_laboratory_data2$Mean_Precipitation)
+    
+    weather.proj_summary$daylength_mean  <- mean(Env_laboratory_data2$daylength)
+    
+    weather.proj_summary <- weather.proj_summary[,-c(1,3:6)] %>% unique
+    
+    weather.proj_summary2 <- rbind(weather.proj_summary2,weather.proj_summary)
+    
+  }
+  
+  weather.proj_summary.plot <- unique(weather.proj_summary2)
+  
+# Plot  Precipitation
+  precip_model_9916 <-ggplot()+ theme_bw(20)+ 
+    
+    # use "weather19_summary2" for the weather data for and "weather.proj_summary.plot" for the climate change projections
+
+# Plot temperature
+
+# Join both temperature and precipitation plots in one stacked plot 
+    print(grid.arrange (precip_model_9916,temp_model_9916, nrow=2))
+  
+}
