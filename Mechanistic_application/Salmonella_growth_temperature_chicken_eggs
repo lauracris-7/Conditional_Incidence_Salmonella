@@ -1,0 +1,158 @@
+# The code does look at how the risk of Salmonellosis in humans depends on the effect of mean temperature on eggs and chicken 
+
+library(readr)
+library(dplyr) 
+library(lubridate) 
+library(ggplot2)
+
+
+
+# Read weather values recorded per laboratory postcode
+Env_laboratory_data2 <-read_csv("Simulated_Laboratory_7.csv") %>% as.data.frame()
+Env_laboratory_data2 <-distinct(Env_laboratory_data2) 
+
+# Select the records for the years of interest. We remove the rows for which there is no information for any of the weather variables. Dates match available data for residents catchment areas
+Env_laboratory <-subset(Env_laboratory_data2, year(as.Date(Env_laboratory_data2$Date))>=2000 & year(as.Date(Env_laboratory_data2$Date))<=2016)
+
+
+temperature <- 4:46
+
+#### Salmonella growth in Eggs
+# Mu max egg yolk (Gumudevelli, 2007): maximum growth rate logeCFU/g in 1 h with initial contamination of 2-3 log CFU/g
+
+mu_max_egg <- function (temperature){
+    a <- 0.002065
+    Tmin <-6.13
+    b <-0.27469
+    Tmax <- 46.26
+    
+    mu_max_egg <- a*(temperature-Tmin)^2*(1-exp(b*(temperature-Tmax)))
+    
+    return(mu_max_egg)  
+}
+
+
+#### Salmonella growth in Chicken
+# Mu max chicken: maximum growth rate h-1 (Juneja, 2007)
+ 
+  mu_max_chicken <- function (temperature){
+
+    #mu_max_chicken <- 0.00028*(temperature+0.67)^2*(1-exp(0.57*(temperature-47.36))) # Gompertz
+    mu_max_chicken <- 0.0019*(temperature-3.35)^2*(1-exp(0.29*(temperature-48.01))) # Baranyi
+    
+    return(mu_max_chicken)  
+  } 
+    
+
+
+# Comparing both equations: 
+
+growth_food <-cbind(temperature) %>% as.data.frame()
+growth_food$chicken <- sapply(temperature,mu_max_chicken)
+growth_food$egg <- sapply(temperature, mu_max_egg) 
+
+
+growth_eq_ChickEgg <- ggplot(growth_food, aes(x=temperature, y=chicken, colour="chicken" ,group=2))+
+  geom_line(linewidth=1.5)+ 
+  geom_line(aes(x=temperature, y=egg, colour="egg",group=2), linewidth=1.5)
+ 
+file_name <- "Growth_rate_chicken_eggs.tiff"
+
+
+
+#### Comparison of mechanistic and CI approach based on microbial growth in food
+
+Env_laboratory_data_all <- Env_laboratory # filtered for 2000-2016
+
+egg_yolk<-function (temperature)
+{
+  a<-0.002065
+  b<-6.13
+  c<-0.27469
+  d<-46.26
+  
+  mu_max<-a*(temperature-b)^2*(1-exp(c*(temperature-d)))
+  return(mu_max)
+}
+
+
+egg_chicken<-function (temperature)
+{
+  a<-0.0019 
+  b<-3.35
+  c<-0.29
+  d<-48.01
+  
+  mu_max<-a*(temperature-b)^2*(1-exp(c*(temperature-d)))
+  return(mu_max)
+}
+
+
+Env_laboratory_data_all$mu_egg <-unlist(lapply (Env_laboratory_data_all$Mean_air_temperature, egg_yolk))
+Env_laboratory_data_all$mu_chicken <-unlist(lapply (Env_laboratory_data_all$Mean_air_temperature, egg_chicken))
+Env_laboratory_data_all$mu_residents_egg <-Env_laboratory_data_all$mu_egg*Env_laboratory_data_all$residents
+Env_laboratory_data_all$mu_residents_chicken <-Env_laboratory_data_all$mu_chicken*Env_laboratory_data_all$residents
+
+all_eggs <-aggregate (mu_residents_egg ~ Mean_air_temperature, Env_laboratory_data_all, sum)
+all_chicken <-aggregate (mu_residents_chicken ~ Mean_air_temperature, Env_laboratory_data_all, sum)
+all_exposure <-aggregate (residents ~ Mean_air_temperature, Env_laboratory_data_all, sum)
+CI_egg <-all_eggs$mu_residents_egg/all_exposure$residents 
+CI_chicken <-all_chicken$mu_residents_chicken /all_exposure$residents
+temperature <-all_eggs$Mean_air_temperature
+
+
+  # To compare the curves, we consider the AUC
+# Data is re-scaled to AUC=1 for all cases just to compare the slope of the curves, since the values are not very informative.
+plot(temperature,CI_egg/sum(CI_egg))
+lines(temperature,CI_chicken/sum(CI_chicken),col="red")
+
+CI_food_df <- data.frame(temperature,CI_egg,CI_chicken)
+CI_food_df_Norm <- data.frame(temperature,CI_egg/sum(CI_egg),CI_chicken/sum(CI_chicken))
+# Data rescaled to AUC=1 for all cases
+
+
+
+# Add CI (mean temperature) 
+
+# Create same plot in ggplot:
+variable_x <- "Mean_air_temperature"
+Conditional_incidence_quantiles <- read.csv (paste("/Final plots_ribbon small/Conditional_probability_",variable_x,"_",width_char,"_quantile_detrend_2000-2016_corrected06072023.csv",sep=""))
+Conditional_incidence_quantiles <- Conditional_incidence_quantiles[,-1]
+norm <- 1e-07
+
+Conditional_incidence_quantiles$incidence <-Conditional_incidence_quantiles$counts/Conditional_incidence_quantiles$residents_tot
+Conditional_incidence_quantiles$incidence <-Conditional_incidence_quantiles$incidence/norm
+
+
+y=Conditional_incidence_quantiles$counts 
+n=Conditional_incidence_quantiles$residents_tot # input data as frequencies
+
+
+pw=(y + 2)/(n + 4) # Wilson's point estimate
+Wald_adj_lower <- (pw-2*sqrt(pw*(1-pw)/n))/norm # Lower conf. limit
+Wald_adj_upper <- (pw+2*sqrt(pw*(1-pw)/n))/norm  # Upper conf. limit 
+
+
+Conditional_incidence_quantiles$conf_minus <-Wald_adj_lower
+Conditional_incidence_quantiles$conf_plus <-Wald_adj_upper
+Conditional_incidence_quantiles <-na.omit(Conditional_incidence_quantiles)
+
+CI_tmean <- data.frame(Conditional_incidence_quantiles$Mean_air_temperature, Conditional_incidence_quantiles$incidence/sum(Conditional_incidence_quantiles$incidence)) 
+colnames(CI_tmean) <- c("temperature", "CI_temperature")
+
+
+# Plot mechanistic+CI(TMean)
+
+Conditional_incidence_compare <- ggplot()+
+
+  geom_line(CI_food_df, mapping= aes (x=temperature, y= CI_egg/sum(CI_egg)), linewidth=1, colour="#00BFC4") +
+  geom_line(CI_food_df, mapping= aes (x=temperature, y= CI_chicken/sum(CI_chicken)), linewidth=1, colour="#F8766D") +
+  
+  theme_bw(20) + 
+
+  geom_line (CI_tmean, mapping= aes(x=temperature, y=CI_temperature/10000), linewidth=1, colour="black") +
+  
+  ylab("Conditional Incidence")+
+  xlab("Mean air temperature (ºC)") 
+
+
