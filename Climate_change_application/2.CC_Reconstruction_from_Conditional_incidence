@@ -1,0 +1,214 @@
+# Reconstruction of simulation from UK conditional prevalence to Climate change data
+
+rm(list=ls(all=)) 
+setwd("Climate change")
+ 
+library(ISOweek)
+library(lubridate)
+library(ggplot2)
+require(MASS)
+library(scales)
+require(pheno)
+library(timeDate)
+library(pastecs)
+library(stringi)
+library(timeSeries)
+library(plyr)
+library(tools)
+library (readr)
+library (dplyr)
+library (data.table)
+library(tidyverse)
+library(tidyr)
+
+# Define the time lag chosen:
+width <- 7
+width_char <- paste(width)
+
+# Reminder of variables: (change HERE accordingly)
+
+variable_x <-"Maximum_air_temperature" 
+variable_y <-"Mean_Precipitation"
+variable <-"daylength"
+
+
+
+################ Upload the the conditional probability table for the UK values ################
+
+# Detrended values:
+var_x_loc_df <- read.csv (paste("../Final plots_ribbon small/",
+                                variable,"_",variable_y,"_",variable_x,"_",width_char,"_Simulated_for_rec_UNIFORM_narrowedvalues_DETREND.csv",sep=""))
+var_x_loc_df <-as.data.frame(var_x_loc_df[,-1]) # for detrend
+
+###################
+
+delta_hum <-0.5   # precipitation
+delta_temp <-1
+delta_daylength <-1
+ 
+
+
+################ Read Linked Data from file  ################
+
+## Read weather data averaged for 7 days. All members ##
+temp = 	list.files("/Climate change/",pattern="Env_Lab_linkage_*")
+
+
+for (j in 1:length(temp)) {
+
+  Env_laboratory_data <- read.csv(temp[j])
+
+Env_laboratory_data <- Env_laboratory_data [,-1]
+
+names(Env_laboratory_data)[c(3:6)] <-c(variable_x, variable_y, variable, "residents")
+
+
+ 
+## Breaks for each weather factor: ##
+breaks_hum <-round(seq(min(na.omit(Env_laboratory_data[[variable_y]])), 
+                       max(na.omit(Env_laboratory_data[[variable_y]])+delta_hum), by=delta_hum), 2) 
+
+
+breaks_Maximum_air_temperature <-round(seq(min(na.omit(Env_laboratory_data[[variable_x]])-delta_temp),   
+                                           max(na.omit(Env_laboratory_data[[variable_x]]))+ delta_temp, by=delta_temp), 0)
+
+breaks_daylength <-round(seq(min(na.omit(Env_laboratory_data[[variable]])-delta_daylength 
+                                 ),   
+                             max(na.omit(Env_laboratory_data[[variable]]))+delta_daylength
+                             , by=delta_daylength),0)
+
+
+
+
+#----insert of breaks ---
+
+# -- Daylength
+dt_day = data.table(breaks_daylength, val = breaks_daylength)
+dt_day <- dt_day [dt_day$breaks_daylength %in% unique(var_x_loc_df$daylength),]  # check the variable here is the one of interest. idem for the 2 other weather variables
+
+dt_day <- na.omit (dt_day)
+setattr(dt_day, "sorted", "breaks_daylength")
+dt_day2 <- dt_day[J(Env_laboratory_data[[variable]]), roll = "nearest"]
+
+variable_df_6_2 <- as.data.frame(Env_laboratory_data[,c("id","Date", "residents")])
+variable_df_6_2$day_break<- dt_day2$val
+
+
+# -- Relative humidity
+dt_hum = data.table(breaks_hum, val = breaks_hum) 
+dt_hum <- na.omit (dt_hum)
+setattr(dt_hum, "sorted", "breaks_hum")
+dt_hum2 <- dt_hum[J(Env_laboratory_data[[variable_y]]), roll = "nearest"]
+
+
+variable_df_6_2$hum_break<- dt_hum2$val
+
+
+# -- Maximum air temperature
+dt_temp = data.table(breaks_Maximum_air_temperature, val = breaks_Maximum_air_temperature)
+dt_temp <- dt_temp [dt_temp$breaks_Maximum_air_temperature %in% unique(var_x_loc_df$Maximum_air_temperature),]  
+
+dt_temp <- na.omit (dt_temp)
+setattr(dt_temp, "sorted", "breaks_Maximum_air_temperature")
+dt_temp2  <- dt_temp[J(Env_laboratory_data[[variable_x]]), roll = "nearest"]
+
+variable_df_6_2$temp_break<- dt_temp2$val
+
+colnames(variable_df_6_2) <- c("id","Date", "residents", variable, variable_y, variable_x)
+
+
+# Join both data frames
+dt_df8 <- data.table(variable_df_6_2, key= c(variable_y, variable_x, variable))
+dt_var <- data.table(var_x_loc_df, key= c(variable_y, variable_x, variable))
+
+variable_df_dis3 <- dt_df8[dt_var]  # If NA arise after joining, check that the breaks_hum are coinciding both for variable_df_6_2 and var_x_loc_df
+
+variable_df_dis3 <- na.omit(variable_df_dis3) # deletes instances for which there is not a match for the weather combinations.
+variable_df_dis3 <-variable_df_dis3[order(as.Date(variable_df_dis3$Date)),]
+
+# ATENTION! the result mixes the residents of both areas of study. Make sure to use the residents of relevance!
+    
+    colnames(variable_df_dis3)[3] ="residents_projections"
+    colnames(variable_df_dis3)[8] ="residents_location_time_past" # not used. No. of people exposed to the same weather conditions in an area with at least one case.
+    colnames(variable_df_dis3)[9] ="residents_total_past" 
+  
+      
+# calculation of all the potential incidence based on the weather conditions of the area. The counts used as numerator correspond to the simulation of cases per weather condition.
+    variable_df_dis3$incidence <-variable_df_dis3$counts/variable_df_dis3$residents_total_past
+
+# Adjust to delete outlayers from our CI created upon the total number of residents exposed to certain weather combinations:
+    
+    p <- variable_df_dis3$counts/variable_df_dis3$residents_total_past
+    n <- variable_df_dis3$residents_total_past
+
+    
+    # save instances for which we do not have predictions based on historical experience
+    no.climate.data <- variable_df_dis3[variable_df_dis3$residents_total_past==0,] 
+    write.csv(no.climate.data , paste0("NaNs_reconstruction_variable_df_dis3_member_",j,".csv"))
+    
+   
+    variable_df_dis5 <-variable_df_dis3#[variable_df_dis3$residents_total_past>1e6] 
+
+      # Extrapolation of values for which we do not have the Conditional Incidence predictions
+
+      z_coord <-variable_df_dis5$incidence   
+      y_coord<-variable_df_dis5$daylength
+      x_coord <-variable_df_dis5$Maximum_air_temperature
+
+      extrapolation <-lm(z_coord ~ (poly(x_coord,3)+poly(y_coord,3)))
+      
+
+      na_rows <- which(is.na(variable_df_dis3[, 10]))  # Get the indices of rows with NA values in the 10th column (incidence column)
+      
+      if (length(na_rows) > 0) {
+
+        new.data<-data.frame(x_coord=as.numeric(unlist(variable_df_dis3[na_rows, c(6)])),
+                             y_coord=as.numeric(unlist(variable_df_dis3[na_rows, c(4)])))
+        
+        
+        extrapolated_values<-as.numeric(predict(extrapolation, 
+                                                newdata = new.data))  
+                                               
+        
+        variable_df_dis3[na_rows, 10] <- extrapolated_values
+
+      }
+      
+
+
+      lambda <-variable_df_dis4$incidence 
+      comp_cases <-lambda*variable_df_dis4$residents_projections # estimation of the "real" incidence based on the possible cases due to weather and the residents number in the catchment area
+
+      time_series_1 <-data.frame(variable_df_dis4$Date, comp_cases, lambda, variable_df_dis4$id)
+      colnames(time_series_1) <-c("Date","Cases","Lambda","Lab")
+      
+
+write.table(time_series_1, paste(variable,"_",variable_x,"_",variable_y,"_",width_char,"_reconstructed_member_",j,"_Detrend_extrapolation.csv",sep=""), col.names= NA, row.names= TRUE, sep=",",eol= "\n") #  Saved on 08/06/23 extrapolating
+
+}
+
+
+################ Plot of the sum of all NAs all members per day for each year ################
+all_absences <- c()
+members <- c(1:15)
+
+for (k in 1:length(members)) {
+
+  #abs_prediction <- read.csv(nas.files[k])
+  abs_prediction <- read.csv(paste0("NaNs_reconstruction_variable_df_dis3_member_",k,".csv"))
+  abs_prediction <- abs_prediction [,-1]
+  abs_prediction$member <- k
+  
+  all_absences <- rbind(all_absences, abs_prediction)
+}
+
+all_absences$count <- 1
+all_absences$Date <- as.Date(all_absences$Date)
+
+all_absences43 <- all_absences[year(all_absences$Date)==2043,] 
+total_na43 <- ddply(all_absences43, ~Date, summarise, total=sum(count))  #use for plotting missing data in year 2043
+
+all_absences$yday <- yday(all_absences$Date)
+total_na <- ddply(all_absences, ~yday, summarise, total=sum(count))  # use for plotting missing data for all years
+
+
